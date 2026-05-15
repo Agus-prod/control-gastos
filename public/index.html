@@ -73,7 +73,7 @@ function registros(){
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <span class="pill ${tipo==='ingreso'?'income':'expense'}">${L(t.amount || t.monto)}</span>
-          <button class="btn danger" onclick="deleteTx('${t.id}')">Borrar</button>
+          <button class="btn danger js-delete" data-type="tx" data-id="${t.id}">Borrar</button>
         </div>
       </div>`
     }).join('') : '<div class="empty">Sin registros</div>'}
@@ -96,7 +96,7 @@ function loanCard(l){
     <div class="actions" style="margin-top:12px">
       <button class="btn light" onclick="openPay('${l.id}')">Abonar</button>
       <button class="btn ghost" onclick="showPays('${l.id}')">Historial</button>
-      <button class="btn danger" onclick="deleteLoan('${l.id}')">Borrar</button>
+      <button class="btn danger js-delete" data-type="loan" data-id="${l.id}">Borrar</button>
     </div>
   </div>`;
 }
@@ -141,4 +141,63 @@ function openPay(id){const l=state.loans.find(x=>x.id===id);$('modalBody').inner
 async function savePay(id){const l=state.loans.find(x=>x.id===id), amount=Number($('payAmount').value||0); if(!amount)return toast('Ingresa monto'); const uid=user().id, date=$('payDate').value, note=$('payNote').value; let bal=Math.max(0,Number(l.current_balance||l.balance||l.saldo_actual||0)-amount); let {error}=await sb.from('loan_payments').insert({loan_id:id,user_id:uid,amount,monto:amount,payment_date:date,fecha:date,note,notes:note}); if(error)return toast(error.message); await sb.from('loans').update({current_balance:bal,balance:bal,saldo_actual:bal,status:bal<=0?'pagado':'activo'}).eq('id',id); await sb.from('transactions').insert({user_id:uid,type:'gasto',tipo:'gasto',description:'Abono préstamo: '+(l.name||l.nombre),descripcion:'Abono préstamo: '+(l.name||l.nombre),amount,monto:amount,category:'Préstamos',categoria:'Préstamos',tx_date:date,fecha:date}); closeModal(); await loadAll();}
 function showPays(id){const pays=state.payments.filter(p=>p.loan_id===id);$('modalBody').innerHTML=`<h2>Historial de abonos</h2><div class="list">${pays.map(p=>`<div class="item"><span>${p.payment_date||p.fecha}</span><strong>${L(p.amount||p.monto)}</strong></div>`).join('')||'<div class="empty">Sin abonos</div>'}</div><button class="btn ghost" onclick="closeModal()">Cerrar</button>`;$('modal').classList.add('show')}
 init();
-</script></body></html>
+</script>
+<!-- DELETE_FIX_START -->
+<script>
+document.addEventListener("click", async function(e){
+  const btn = e.target.closest(".js-delete");
+  if(!btn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  const id = btn.dataset.id;
+  const type = btn.dataset.type;
+
+  if(!id) {
+    alert("No se encontró el ID para borrar.");
+    return;
+  }
+
+  if(type === "tx"){
+    if(!confirm("¿Borrar este registro?")) return;
+
+    const { error } = await sb
+      .from("transactions")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user().id);
+
+    if(error){
+      alert(error.message);
+      return;
+    }
+
+    await loadAll();
+    return;
+  }
+
+  if(type === "loan"){
+    if(!confirm("¿Borrar este préstamo? También se eliminarán sus abonos.")) return;
+
+    await sb.from("loan_payments").delete().eq("loan_id", id).eq("user_id", user().id);
+    await sb.from("transactions").delete().eq("loan_id", id).eq("user_id", user().id);
+
+    const { error } = await sb
+      .from("loans")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user().id);
+
+    if(error){
+      alert(error.message);
+      return;
+    }
+
+    await loadAll();
+  }
+}, true);
+</script>
+<!-- DELETE_FIX_END -->
+
+</body></html>
